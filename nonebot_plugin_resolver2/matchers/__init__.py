@@ -1,5 +1,7 @@
+from nonebot import require
 from nonebot.matcher import Matcher
 
+require("nonebot_plugin_alconna")
 from .acfun import acfun
 from .bilibili import bilibili
 from .douyin import douyin

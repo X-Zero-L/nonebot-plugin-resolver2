@@ -2,13 +2,15 @@ from pathlib import Path
 import re
 from typing import Any
 
+import aiohttp
 from nonebot import logger, on_keyword
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.params import PausePromptResult
 from nonebot.rule import Rule
 from nonebot.typing import T_State
+from nonebot_plugin_alconna import UniMessage
 
-from ..config import NEED_UPLOAD, NICKNAME, ytb_cookies_file
+from ..config import NEED_UPLOAD, NICKNAME, PROXY, ytb_cookies_file
 from ..download.utils import keep_zh_en_num
 from ..download.ytdlp import get_video_info, ytdlp_download_audio, ytdlp_download_video
 from ..exception import handle_exception
@@ -35,10 +37,70 @@ async def _(event: MessageEvent, state: T_State):
     url = matched.group(0)
     try:
         info_dict = await get_video_info(url, ytb_cookies_file)
+        # logger.info(info_dict)
+        # with open(Path(__file__).parent / "info_dict.json", "w") as f:
+        #    json.dump(info_dict, f)
+
+        # 提取视频信息
         title = info_dict.get("title", "未知")
+        channel = info_dict.get("channel", "未知频道")
+        uploader = info_dict.get("uploader", channel)
+        view_count = info_dict.get("view_count", 0)
+        like_count = info_dict.get("like_count", 0)
+        duration = info_dict.get("duration", 0)
+        upload_date = info_dict.get("upload_date", "")
+        description = info_dict.get("description", "")
+
+        # 格式化数字
+        def format_count(count):
+            if count >= 1000000:
+                return f"{count / 1000000:.1f}M"
+            elif count >= 1000:
+                return f"{count / 1000:.1f}K"
+            return str(count)
+
+        # 格式化时长
+        def format_duration(seconds):
+            if seconds <= 0:
+                return "未知"
+            minutes, seconds = divmod(int(seconds), 60)
+            hours, minutes = divmod(minutes, 60)
+            if hours > 0:
+                return f"{hours}:{minutes:02d}:{seconds:02d}"
+            else:
+                return f"{minutes}:{seconds:02d}"
+
+        # 格式化上传日期
+        def format_upload_date(date_str):
+            if len(date_str) == 8:  # YYYYMMDD
+                return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            return date_str
+
     except Exception as e:
         await ytb.finish(f"{NICKNAME}解析 | 油管 - 标题获取出错: {e}")
-    await ytb.send(f"{NICKNAME}解析 | 油管 - {title}")
+
+    # 构建丰富的消息内容
+    async def download_thumbnail(url: str) -> bytes:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, proxy=PROXY) as resp:
+                return await resp.read()
+
+    # 构建详细信息文本
+    title_text = f"{NICKNAME}解析 | 油管\n\n🎬 {title}"
+    description_text = f"📝 简介：{description}"
+    channel_info = f"""📺 频道：{uploader}
+👀 观看：{format_count(view_count)} 次
+👍 点赞：{format_count(like_count)}
+⏱️ 时长：{format_duration(duration)}
+📅 发布：{format_upload_date(upload_date)}"""
+
+    msg = (
+        UniMessage(title_text)
+        + UniMessage.image(raw=await download_thumbnail(info_dict.get("thumbnail", "")))
+        + UniMessage(description_text)
+        + UniMessage(channel_info)
+    )
+    await msg.send()
     state["url"] = url
     state["title"] = title
     await ytb.pause("您需要下载音频(0)，还是视频(1)")
