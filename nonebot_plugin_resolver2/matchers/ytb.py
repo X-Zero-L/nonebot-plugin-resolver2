@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import re
 from typing import Any
@@ -14,7 +15,7 @@ from ..config import NEED_UPLOAD, NICKNAME, PROXY, ytb_cookies_file
 from ..download.utils import keep_zh_en_num
 from ..download.ytdlp import get_video_info, ytdlp_download_audio, ytdlp_download_video
 from ..exception import handle_exception
-from .filter import is_not_in_disabled_groups
+from .filter import is_not_in_disabled_groups, is_not_in_do_not_download_media_groups
 from .helper import get_file_seg, get_record_seg, get_video_seg
 
 ytb = on_keyword(keywords={"youtube.com", "youtu.be"}, rule=Rule(is_not_in_disabled_groups))
@@ -39,7 +40,7 @@ async def _(event: MessageEvent, state: T_State):
         info_dict = await get_video_info(url, ytb_cookies_file)
         # logger.info(info_dict)
         # with open(Path(__file__).parent / "info_dict.json", "w") as f:
-        #    json.dump(info_dict, f)
+        #     json.dump(info_dict, f)
 
         # 提取视频信息
         title = info_dict.get("title", "未知")
@@ -50,6 +51,16 @@ async def _(event: MessageEvent, state: T_State):
         duration = info_dict.get("duration", 0)
         upload_date = info_dict.get("upload_date", "")
         description = info_dict.get("description", "")
+        formats = info_dict.get("formats", [])
+        height, width = 0, 0
+        for format in formats:
+            height = format.get("height", 0)
+            width = format.get("width", 0)
+            if height and width:
+                break
+        thumbnail = info_dict.get("thumbnail", "")
+        if height > width:
+            thumbnail = thumbnail.replace("maxresdefault", "oardefault")
 
         # 格式化数字
         def format_count(count):
@@ -77,7 +88,7 @@ async def _(event: MessageEvent, state: T_State):
             return date_str
 
     except Exception as e:
-        await ytb.finish(f"{NICKNAME}解析 | 油管 - 标题获取出错: {e}")
+        await ytb.finish(f"油管 - 标题获取出错: {e}")
 
     # 构建丰富的消息内容
     async def download_thumbnail(url: str) -> bytes:
@@ -86,24 +97,27 @@ async def _(event: MessageEvent, state: T_State):
                 return await resp.read()
 
     # 构建详细信息文本
-    title_text = f"{NICKNAME}解析 | 油管\n\n🎬 {title}"
-    description_text = f"📝 简介：{description}"
+    title_text = f"🎬 {title}"
+    description_text = f"📝 简介：{description}\n"
     channel_info = f"""📺 频道：{uploader}
 👀 观看：{format_count(view_count)} 次
 👍 点赞：{format_count(like_count)}
 ⏱️ 时长：{format_duration(duration)}
-📅 发布：{format_upload_date(upload_date)}"""
+📅 发布：{format_upload_date(upload_date)}
+🔗 链接：{url}
+"""
 
     msg = (
         UniMessage(title_text)
-        + UniMessage.image(raw=await download_thumbnail(info_dict.get("thumbnail", "")))
+        + UniMessage.image(raw=await download_thumbnail(thumbnail))
         + UniMessage(description_text)
         + UniMessage(channel_info)
     )
     await msg.send()
     state["url"] = url
     state["title"] = title
-    await ytb.pause("您需要下载音频(0)，还是视频(1)")
+    if is_not_in_do_not_download_media_groups(event):
+        await ytb.pause("您需要下载音频(0)，还是视频(1)")
 
 
 @ytb.handle()

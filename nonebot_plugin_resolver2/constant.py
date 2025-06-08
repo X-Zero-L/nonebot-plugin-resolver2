@@ -21,3 +21,5 @@ VIDEO_MAX_MB: Final[int] = 100
 
 # 解析列表文件名
 DISABLED_GROUPS: Final[str] = "disable_group_list.json"
+
+FILTER_CONFIG_FILE: Final[str] = "filter_config.json"

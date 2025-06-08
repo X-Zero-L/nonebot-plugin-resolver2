@@ -19,12 +19,14 @@ from ..download import (
 from ..download.utils import keep_zh_en_num
 from ..exception import ParseException, handle_exception
 from ..parsers import BilibiliParser, get_redirect_url
-from .filter import is_not_in_disabled_groups
+from .filter import is_not_in_disabled_groups, is_not_in_disabled_groups_by_bilibili
 from .helper import get_file_seg, get_img_seg, get_record_seg, get_video_seg, send_segments
 from .preprocess import ExtractText, Keyword, r_keywords
 
 bilibili = on_message(
-    rule=is_not_in_disabled_groups & r_keywords("bilibili", "bili2233", "b23", "BV", "av"),
+    rule=is_not_in_disabled_groups_by_bilibili
+    & r_keywords("bilibili", "bili2233", "b23", "BV", "av")
+    & is_not_in_disabled_groups,
     priority=5,
 )
 
