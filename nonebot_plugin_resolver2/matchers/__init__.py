@@ -7,6 +7,7 @@ from .bilibili import bilibili
 from .douyin import douyin
 from .kuaishou import kuaishou
 from .kugou import kugou
+from .magnet import magnet
 from .ncm import ncm
 from .tiktok import tiktok
 from .twitter import twitter
@@ -21,6 +22,7 @@ resolvers: dict[str, type[Matcher]] = {
     "kuaishou": kuaishou,
     "ytb": ytb,
     "kugou": kugou,
+    "magnet": magnet,
     "ncm": ncm,
     "twitter": twitter,
     "tiktok": tiktok,

@@ -3,6 +3,7 @@ from .bilibili import BilibiliParser as BilibiliParser
 from .douyin import DouyinParser as DouyinParser
 from .kuaishou import KuaishouParser as KuaishouParser
 from .kugou import KuGouParser as KuGouParser
+from .magnet import MagnetParser as MagnetParser
 from .ncm import NCMParser as NCMParser
 from .utils import get_redirect_url as get_redirect_url
 from .weibo import WeiBoParser as WeiBoParser
@@ -14,6 +15,7 @@ __all__ = [
     "DouyinParser",
     "KuGouParser",
     "KuaishouParser",
+    "MagnetParser",
     "NCMParser",
     "WeiBoParser",
     "XiaoHongShuParser",
