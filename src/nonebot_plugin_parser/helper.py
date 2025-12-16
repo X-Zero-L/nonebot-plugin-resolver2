@@ -20,6 +20,7 @@ from nonebot_plugin_alconna.uniseg import (
 )
 
 from .config import pconfig
+from .exception import DownloadException, ParseException
 
 # from .exception import TipException
 
@@ -191,9 +192,13 @@ class UniHelper:
 
             try:
                 result = await func(*args, **kwargs)
-            # except TipException as e:
-            #     await UniMessage.text(e.message).send()
-            #     raise
+            except DownloadException:
+                await cls.message_reaction(event, "fail")
+                return None
+            except ParseException as e:
+                await cls.message_reaction(event, "fail")
+                await UniMessage(e.message).send()
+                return None
             except Exception:
                 await cls.message_reaction(event, "fail")
                 raise

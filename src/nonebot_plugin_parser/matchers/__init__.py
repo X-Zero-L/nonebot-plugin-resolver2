@@ -4,8 +4,17 @@ from typing import TypeVar
 from nonebot import logger, get_driver, on_command
 from nonebot.params import CommandArg
 from nonebot.adapters import Message
+from nonebot_plugin_uninfo import Session, UniSession
 
 from .rule import SUPER_PRIVATE, Searched, SearchResult, on_keyword_regex
+from .filter import (
+    get_group_key,
+    is_bili_auto_download_when_disabled,
+    is_download_enabled,
+    is_platform_enabled,
+)
+from ..constants import PlatformEnum
+from ..context import BILI_AUTO_DOWNLOAD_ONLY, DOWNLOAD_MEDIA
 from ..utils import LimitedSizeDict
 from ..config import pconfig
 from ..helper import UniHelper, UniMessage
@@ -64,32 +73,60 @@ def clear_result_cache():
 @UniHelper.with_reaction
 async def parser_handler(
     sr: SearchResult = Searched(),
+    session: Session = UniSession(),
 ):
     """统一的解析处理器"""
     # 1. 获取缓存结果
-    cache_key = sr.searched.group(0)
+    parser = get_parser(sr.keyword)
+    platform = parser.platform.name
+
+    download_enabled = is_download_enabled(session)
+
+    auto_download_only = False
+    if not is_platform_enabled(str(platform), session):
+        if (
+            platform == PlatformEnum.BILIBILI
+            and download_enabled
+            and is_bili_auto_download_when_disabled(session)
+        ):
+            auto_download_only = True
+        else:
+            return
+
+    group_key = "private" if session.scene.is_private else get_group_key(session)
+    cache_key = f"{sr.searched.group(0)}|{group_key}|d{int(download_enabled)}|b{int(auto_download_only)}"
     result = _RESULT_CACHE.get(cache_key)
 
-    if result is None:
-        # 2. 获取对应平台 parser
-        parser = get_parser(sr.keyword)
-        result = await parser.parse(sr.keyword, sr.searched)
-        logger.debug(f"解析结果: {result}")
-    else:
-        logger.debug(f"命中缓存: {cache_key}, 结果: {result}")
+    token_download = DOWNLOAD_MEDIA.set(download_enabled)
+    token_bili_auto = BILI_AUTO_DOWNLOAD_ONLY.set(auto_download_only)
+    try:
+        if result is None:
+            # 2. 获取对应平台 parser
+            result = await parser.parse(sr.keyword, sr.searched)
+            logger.debug(f"解析结果: {result}")
+        else:
+            logger.debug(f"命中缓存: {cache_key}, 结果: {result}")
 
-    # 3. 渲染内容消息并发送
-    renderer = get_renderer(result.platform.name)
-    async for message in renderer.render_messages(result):
-        await message.send()
+        # 3. 渲染内容消息并发送
+        renderer = get_renderer(str(result.platform.name))
+        async for message in renderer.render_messages(result):
+            await message.send()
 
-    # 4. 缓存解析结果
-    _RESULT_CACHE[cache_key] = result
+        # 4. 缓存解析结果
+        _RESULT_CACHE[cache_key] = result
+    finally:
+        DOWNLOAD_MEDIA.reset(token_download)
+        BILI_AUTO_DOWNLOAD_ONLY.reset(token_bili_auto)
 
 
 @on_command("bm", priority=3, block=True).handle()
 @UniHelper.with_reaction
-async def _(message: Message = CommandArg()):
+async def _(message: Message = CommandArg(), session: Session = UniSession()):
+    if not is_platform_enabled(str(PlatformEnum.BILIBILI), session) and not is_bili_auto_download_when_disabled(session):
+        await UniMessage("本群已关闭哔哩哔哩解析").finish()
+    if not is_download_enabled(session):
+        await UniMessage("本群已关闭下载解析").finish()
+
     text = message.extract_plain_text()
     matched = re.search(r"(BV[A-Za-z0-9]{10})(\s\d{1,3})?", text)
     if not matched:
@@ -120,7 +157,12 @@ if YTDLP_DOWNLOADER is not None:
 
     @on_command("ym", priority=3, block=True).handle()
     @UniHelper.with_reaction
-    async def _(message: Message = CommandArg()):
+    async def _(message: Message = CommandArg(), session: Session = UniSession()):
+        if not is_platform_enabled(str(PlatformEnum.YOUTUBE), session):
+            await UniMessage("本群已关闭油管解析").finish()
+        if not is_download_enabled(session):
+            await UniMessage("本群已关闭下载解析").finish()
+
         text = message.extract_plain_text()
         parser = get_parser_by_type(YouTubeParser)
         _, matched = parser.search_url(text)

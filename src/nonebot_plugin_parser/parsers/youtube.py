@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from .base import Platform, BaseParser, PlatformEnum, handle, pconfig
 from .cookie import save_cookies_with_netscape
+from ..context import DOWNLOAD_MEDIA
 from ..download import YTDLP_DOWNLOADER
 
 
@@ -36,26 +37,75 @@ class YouTubeParser(BaseParser):
         url = searched.group(0)
 
         video_info = await YTDLP_DOWNLOADER.extract_video_info(url, self.cookies_file)
+
+        thumbnail = video_info.thumbnail
+        if (
+            isinstance(video_info.height, int)
+            and isinstance(video_info.width, int)
+            and video_info.height > video_info.width
+            and "maxresdefault" in thumbnail
+        ):
+            thumbnail = thumbnail.replace("maxresdefault", "oardefault")
+
         author = await self._fetch_author_info(video_info.channel_id)
 
         contents = []
-        if video_info.duration <= pconfig.duration_maximum:
+        if DOWNLOAD_MEDIA.get() and video_info.duration <= pconfig.duration_maximum:
             video = YTDLP_DOWNLOADER.download_video(url, self.cookies_file)
             contents.append(
                 self.create_video_content(
                     video,
-                    video_info.thumbnail,
+                    thumbnail,
                     video_info.duration,
                 )
             )
         else:
-            contents.extend(self.create_image_contents([video_info.thumbnail]))
+            contents.extend(self.create_image_contents([thumbnail]))
+
+        desc = video_info.description.strip() if video_info.description else ""
+        text = f"简介: {desc}" if desc else None
+
+        def format_count(count: int | None) -> str | None:
+            if count is None:
+                return None
+            if count >= 1_000_000:
+                return f"{count / 1_000_000:.1f}M"
+            if count >= 1_000:
+                return f"{count / 1_000:.1f}K"
+            return str(count)
+
+        def format_duration(seconds: int) -> str:
+            minutes, seconds = divmod(int(seconds), 60)
+            hours, minutes = divmod(minutes, 60)
+            if hours > 0:
+                return f"{hours}:{minutes:02d}:{seconds:02d}"
+            return f"{minutes}:{seconds:02d}"
+
+        def format_upload_date(date_str: str | None) -> str | None:
+            if not date_str:
+                return None
+            if len(date_str) == 8:
+                return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            return date_str
+
+        extra_lines: list[str] = []
+        if view := format_count(video_info.view_count):
+            extra_lines.append(f"👀 观看: {view}")
+        if like := format_count(video_info.like_count):
+            extra_lines.append(f"👍 点赞: {like}")
+        extra_lines.append(f"⏱️ 时长: {format_duration(video_info.duration)}")
+        if upload := format_upload_date(video_info.upload_date):
+            extra_lines.append(f"📅 发布: {upload}")
+        extra_lines.append(f"📺 频道: {video_info.channel}")
+        extra_info = "\n".join(extra_lines).strip()
 
         return self.result(
             title=video_info.title,
             author=author,
             contents=contents,
             timestamp=video_info.timestamp,
+            text=text,
+            extra={"info": extra_info} if extra_info else {},
         )
 
     async def parse_audio(self, url: str):
@@ -74,7 +124,7 @@ class YouTubeParser(BaseParser):
         contents = []
         contents.extend(self.create_image_contents([video_info.thumbnail]))
 
-        if video_info.duration <= pconfig.duration_maximum:
+        if DOWNLOAD_MEDIA.get() and video_info.duration <= pconfig.duration_maximum:
             audio_task = YTDLP_DOWNLOADER.download_audio(url, self.cookies_file)
             contents.append(self.create_audio_content(audio_task, duration=video_info.duration))
 

@@ -11,6 +11,7 @@ from bilibili_api.opus import Opus
 from bilibili_api.video import Video
 from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 
+from ...context import BILI_AUTO_DOWNLOAD_ONLY, DOWNLOAD_MEDIA
 from ..base import (
     DOWNLOADER,
     BaseParser,
@@ -123,39 +124,53 @@ class BilibiliParser(BaseParser):
         # 处理分 p
         page_info = video_info.extract_info_with_page(page_num)
 
+        auto_download_only = BILI_AUTO_DOWNLOAD_ONLY.get()
+
         # 获取 AI 总结
-        if self._credential:
+        if auto_download_only:
+            ai_summary = ""
+            text = None
+        elif self._credential:
             cid = await video.get_cid(page_info.index)
             ai_conclusion = await video.get_ai_conclusion(cid)
             ai_conclusion = convert(ai_conclusion, AIConclusion)
             ai_summary = ai_conclusion.summary
         else:
-            ai_summary: str = "哔哩哔哩 cookie 未配置或失效, 无法使用 AI 总结"
+            ai_summary = "哔哩哔哩 cookie 未配置或失效, 无法使用 AI 总结"
 
         url = f"https://bilibili.com/{video_info.bvid}"
         url += f"?p={page_info.index + 1}" if page_info.index > 0 else ""
 
-        # 视频下载 task
-        async def download_video():
-            output_path = pconfig.cache_dir / f"{video_info.bvid}-{page_num}.mp4"
-            if output_path.exists():
-                return output_path
-            v_url, a_url = await self.extract_download_urls(video=video, page_index=page_info.index)
-            if page_info.duration > pconfig.duration_maximum:
-                raise DurationLimitException
-            if a_url is not None:
-                return await DOWNLOADER.download_av_and_merge(
-                    v_url, a_url, output_path=output_path, ext_headers=self.headers
-                )
-            else:
-                return await DOWNLOADER.streamd(v_url, file_name=output_path.name, ext_headers=self.headers)
+        contents: list[MediaContent] = []
+        if DOWNLOAD_MEDIA.get():
+            # 视频下载 task
+            async def download_video():
+                output_path = pconfig.cache_dir / f"{video_info.bvid}-{page_num}.mp4"
+                if output_path.exists():
+                    return output_path
+                v_url, a_url = await self.extract_download_urls(video=video, page_index=page_info.index)
+                if page_info.duration > pconfig.duration_maximum:
+                    raise DurationLimitException
+                if a_url is not None:
+                    return await DOWNLOADER.download_av_and_merge(
+                        v_url,
+                        a_url,
+                        output_path=output_path,
+                        ext_headers=self.headers,
+                    )
+                else:
+                    return await DOWNLOADER.streamd(v_url, file_name=output_path.name, ext_headers=self.headers)
 
-        video_task = asyncio.create_task(download_video())
-        video_content = self.create_video_content(
-            video_task,
-            page_info.cover,
-            page_info.duration,
-        )
+            video_task = asyncio.create_task(download_video())
+            contents.append(
+                self.create_video_content(
+                    video_task,
+                    page_info.cover,
+                    page_info.duration,
+                )
+            )
+        elif page_info.cover:
+            contents.extend(self.create_image_contents([page_info.cover]))
 
         return self.result(
             url=url,
@@ -163,8 +178,8 @@ class BilibiliParser(BaseParser):
             timestamp=page_info.timestamp,
             text=text,
             author=author,
-            contents=[video_content],
-            extra={"info": ai_summary},
+            contents=contents,
+            extra={"info": ai_summary} if ai_summary else {},
         )
 
     async def parse_dynamic(self, dynamic_id: int):

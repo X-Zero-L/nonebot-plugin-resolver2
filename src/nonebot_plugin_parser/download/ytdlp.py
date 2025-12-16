@@ -1,6 +1,7 @@
 import asyncio
 from typing import TYPE_CHECKING
 from pathlib import Path
+from typing import Any
 
 import yt_dlp
 from msgspec import Struct, convert
@@ -28,6 +29,16 @@ class VideoInfo(Struct):
     """简介"""
     channel_id: str
     """频道 id"""
+    view_count: int | None = None
+    """观看数"""
+    like_count: int | None = None
+    """点赞数"""
+    upload_date: str | None = None
+    """上传日期 YYYYMMDD"""
+    height: int | None = None
+    """视频高度"""
+    width: int | None = None
+    """视频宽度"""
 
     @property
     def author_name(self) -> str:
@@ -75,9 +86,32 @@ class YtdlpDownloader:
             if not info_dict:
                 raise ParseException("获取视频信息失败")
 
+        self._inject_dimensions(info_dict)
+
         video_info = convert(info_dict, VideoInfo)
         self._video_info_mapping[url] = video_info
         return video_info
+
+    @staticmethod
+    def _inject_dimensions(info_dict: dict[str, Any]) -> None:
+        height = info_dict.get("height") or 0
+        width = info_dict.get("width") or 0
+        if not (height and width):
+            for fmt in info_dict.get("formats") or []:
+                if not isinstance(fmt, dict):
+                    continue
+                h = fmt.get("height")
+                w = fmt.get("width")
+                if h and w:
+                    height = h
+                    width = w
+                    break
+        try:
+            info_dict["height"] = int(height) if height else 0
+            info_dict["width"] = int(width) if width else 0
+        except Exception:
+            info_dict["height"] = 0
+            info_dict["width"] = 0
 
     @auto_task
     async def download_video(self, url: str, cookiefile: Path | None = None) -> Path:

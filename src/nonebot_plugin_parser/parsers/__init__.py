@@ -7,6 +7,7 @@ from .douyin import DouyinParser as DouyinParser
 from .twitter import TwitterParser as TwitterParser
 from .bilibili import BilibiliParser as BilibiliParser
 from .kuaishou import KuaiShouParser as KuaiShouParser
+from .magnet import MagnetParser as MagnetParser
 from ..download import YTDLP_DOWNLOADER
 from .xiaohongshu import XiaoHongShuParser as XiaoHongShuParser
 
