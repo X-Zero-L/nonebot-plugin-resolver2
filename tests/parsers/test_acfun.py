@@ -1,26 +1,33 @@
-from nonebot import logger
 import pytest
+from nonebot import logger
 
 
 @pytest.mark.asyncio
 async def test_parse():
-    from nonebot_plugin_resolver2.download.utils import fmt_size
-    from nonebot_plugin_resolver2.parsers import AcfunParser
+    from nonebot_plugin_parser.utils import fmt_size
+    from nonebot_plugin_parser.parsers import AcfunParser
 
     url = "https://www.acfun.cn/v/ac46593564"
-    acfun_parser = AcfunParser()
+    parser = AcfunParser()
 
     async def parse_acfun_url(url: str) -> None:
-        acid = int(url.split("/")[-1].split("ac")[1])
-        logger.info(f"{url} | 开始解析视频 acid: {acid}")
-        m3u8s_url, video_desc = await acfun_parser.parse_url(url)
-        assert m3u8s_url
-        assert video_desc
-        logger.debug(f"{url} | m3u8s_url: {m3u8s_url}, video_desc: {video_desc}")
+        logger.info(f"{url} | 开始解析 Acfun 视频")
+        # 使用 patterns 匹配 URL
+        keyword, searched = parser.search_url(url)
+        assert searched, f"无法匹配 URL: {url}"
+        parse_result = await parser.parse(keyword, searched)
+        logger.debug(f"{url} | 解析结果: \n{parse_result}")
 
-        logger.info(f"{url} | 开始下载视频")
-        video_file = await acfun_parser.download_video(m3u8s_url, acid)
-        assert video_file
-        logger.info(f"{url} | 视频下载成功, 视频{fmt_size(video_file)}")
+        assert parse_result.title, "视频标题为空"
+        assert parse_result.author, "作者信息为空"
+
+        video_contents = parse_result.contents
+        assert video_contents
+        for video_content in video_contents:
+            video_path = await video_content.get_path()
+            assert video_path.exists()
+            logger.info(f"{url} | 视频下载成功, 视频{fmt_size(video_path)}")
+
+        logger.success(f"{url} | Acfun 视频解析成功")
 
     await parse_acfun_url(url)
