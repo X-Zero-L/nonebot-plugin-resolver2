@@ -12,7 +12,13 @@ from nonebot.permission import Permission
 from nonebot_plugin_uninfo import Session, UniSession
 from nonebot_plugin_alconna.uniseg import Hyper, UniMsg
 
-from .filter import is_enabled
+from .filter import (
+    is_enabled,
+    is_bili_auto_download_when_disabled,
+    is_download_enabled,
+    is_platform_enabled,
+)
+from ..constants import PlatformEnum
 from ..config import gconfig
 
 # 统一的状态键
@@ -137,7 +143,7 @@ class KeywordRegexRule:
     def __hash__(self) -> int:
         return hash(frozenset(self.key_pattern_list))
 
-    async def __call__(self, message: UniMsg, state: T_State) -> bool:
+    async def __call__(self, message: UniMsg, state: T_State, session: Session = UniSession()) -> bool:
         text = _extract_text(message)
         if not text:
             return False
@@ -146,6 +152,24 @@ class KeywordRegexRule:
             if keyword not in text:
                 continue
             if searched := pattern.search(text):
+                # 平台关闭时保持静默：不触发 matcher（避免 reaction / block）
+                try:
+                    from . import get_parser
+
+                    parser = get_parser(keyword)
+                    platform = parser.platform.name
+                    if not is_platform_enabled(str(platform), session):
+                        if (
+                            platform == PlatformEnum.BILIBILI
+                            and is_download_enabled(session)
+                            and is_bili_auto_download_when_disabled(session)
+                        ):
+                            pass
+                        else:
+                            continue
+                except Exception:
+                    # 若无法解析 keyword->platform，则不拦截以避免误伤
+                    pass
                 state[PSR_SEARCHED_KEY] = SearchResult(text=text, keyword=keyword, searched=searched)
                 return True
             logger.debug(f"keyword '{keyword}' is in '{text}', but not matched")
