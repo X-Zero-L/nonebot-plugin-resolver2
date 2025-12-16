@@ -35,6 +35,7 @@ source_alias: dict[source_enum, list[str]] = {
 class FilterConfig(BaseModel):
     filter_dict: dict[source_enum, FilterItem] = Field(default_factory=dict)
     do_not_download_media_groups: list[int] = Field(default_factory=list)
+    bili_auto_download_when_disabled_groups: list[int] = Field(default_factory=list)
 
 
 def load_or_initialize_set() -> set[int]:
@@ -96,6 +97,14 @@ def is_not_in_disabled_groups_by_douyin(event: MessageEvent) -> bool:
 
 def is_not_in_disabled_groups_by_ytb(event: MessageEvent) -> bool:
     return is_not_in_disabled_groups_by_source(event, "ytb")
+
+
+def is_in_bili_auto_download_when_disabled_groups(event: MessageEvent) -> bool:
+    return (
+        True
+        if not isinstance(event, GroupMessageEvent)
+        else event.group_id in filter_config.bili_auto_download_when_disabled_groups
+    )
 
 
 def is_not_in_do_not_download_media_groups(event: MessageEvent) -> bool:
@@ -229,3 +238,37 @@ async def _(matcher: Matcher, bot: Bot, event: MessageEvent):
         await matcher.send("已经发送到私信了~")
     message = f"解析关闭的群聊如下：\n{disable_groups} \n🌟 温馨提示：如果想开关解析需要在群聊@我然后输入[开启/关闭解析], 另外还可以私信我发送[开启/关闭所有解析]"  # noqa: E501
     await bot.send_private_msg(user_id=event.user_id, message=message)
+
+
+@on_command(
+    "开启b站自动下载",
+    rule=to_me(),
+    permission=GROUP_ADMIN | GROUP_OWNER | SUPERUSER,
+    block=True,
+).handle()
+async def _(matcher: Matcher, bot: Bot, event: GroupMessageEvent):
+    """在b站解析关闭时开启自动下载"""
+    gid = event.group_id
+    if gid in filter_config.bili_auto_download_when_disabled_groups:
+        await matcher.finish("b站自动下载已开启, 无需重复开启")
+    else:
+        filter_config.bili_auto_download_when_disabled_groups.append(gid)
+        save_disabled_groups()
+        await matcher.finish("b站自动下载已开启（即使关闭b站解析也会下载视频）")
+
+
+@on_command(
+    "关闭b站自动下载",
+    rule=to_me(),
+    permission=GROUP_ADMIN | GROUP_OWNER | SUPERUSER,
+    block=True,
+).handle()
+async def _(matcher: Matcher, bot: Bot, event: GroupMessageEvent):
+    """在b站解析关闭时关闭自动下载"""
+    gid = event.group_id
+    if gid not in filter_config.bili_auto_download_when_disabled_groups:
+        await matcher.finish("b站自动下载已关闭, 无需重复关闭")
+    else:
+        filter_config.bili_auto_download_when_disabled_groups.remove(gid)
+        save_disabled_groups()
+        await matcher.finish("b站自动下载已关闭")

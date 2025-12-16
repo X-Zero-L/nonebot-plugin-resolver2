@@ -45,6 +45,8 @@ class Config(BaseModel):
     r_video_duration_maximum: int = 480
     # 禁止的解析器
     r_disable_resolvers: list[MatcherNames] = []
+    # bilibili解析关闭时是否仍然允许视频自动下载
+    r_bili_auto_download_when_disabled: bool = False
 
 
 plugin_cache_dir: Path = store.get_plugin_cache_dir()
@@ -71,3 +73,5 @@ NEED_UPLOAD: bool = rconfig.r_need_upload
 NEED_FORWARD: bool = rconfig.r_need_forward
 # 是否使用 base64 编码发送图片，音频，视频
 USE_BASE64: bool = rconfig.r_use_base64
+# bilibili解析关闭时是否仍然允许视频自动下载
+BILI_AUTO_DOWNLOAD_WHEN_DISABLED: bool = rconfig.r_bili_auto_download_when_disabled
